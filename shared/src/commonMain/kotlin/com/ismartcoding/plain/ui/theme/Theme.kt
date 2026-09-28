@@ -8,13 +8,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import com.ismartcoding.plain.enums.DarkTheme
+import com.ismartcoding.plain.platform.rememberDynamicColorScheme
 import com.ismartcoding.plain.preferences.LocalAmoledDarkTheme
 import com.ismartcoding.plain.preferences.LocalDarkTheme
+import com.ismartcoding.plain.preferences.LocalDynamicColor
 
 @Composable
 fun AppTheme(useDarkTheme: Boolean, content: @Composable () -> Unit) {
+    val amoled = LocalAmoledDarkTheme.current
+    val dynamic = if (LocalDynamicColor.current) rememberDynamicColorScheme(useDarkTheme) else null
+    val base = dynamic ?: if (useDarkTheme) plainDarkColorScheme() else plainLightColorScheme()
+    // AMOLED keeps a true-black background even when Material You supplies the
+    // accents: override only the ramp bottoms, leaving the dynamic containers
+    // lifted so cards stay visible (same intent as the amoled branch in
+    // plainDarkColorScheme).
+    val scheme = if (dynamic != null && useDarkTheme && amoled) {
+        base.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceDim = Color.Black,
+        )
+    } else {
+        base
+    }
     MaterialTheme(
-        colorScheme = if (useDarkTheme) plainDarkColorScheme() else plainLightColorScheme(),
+        colorScheme = scheme,
         typography = SystemTypography.applyTextDirection(),
         shapes = Shapes,
         content = content,
@@ -111,7 +129,9 @@ val ColorScheme.filledButtonContent: Color
 
 val ColorScheme.backgroundNormal: Color
     @Composable @ReadOnlyComposable
-    get() = if (DarkTheme.isDarkTheme(LocalDarkTheme.current)) Color(0xFF1C1B1F) else Color(0xFFFFFBFE)
+    // Derived from the active scheme (rather than a fixed literal) so the page
+    // background follows Material You dynamic color and AMOLED pure black.
+    get() = this.background
 
 val ColorScheme.cardBackgroundNormal: Color
     @Composable @ReadOnlyComposable

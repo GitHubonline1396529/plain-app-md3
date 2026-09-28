@@ -197,6 +197,11 @@ object AmoledDarkThemePreference : BasePreference<Boolean>() {
     override val key = booleanPreferencesKey("amoled_dark_theme")
 }
 
+object DynamicColorPreference : BasePreference<Boolean>() {
+    override val default = false
+    override val key = booleanPreferencesKey("dynamic_color")
+}
+
 object PdfFollowDarkThemePreference : BasePreference<Boolean>() {
     override val default = false
     override val key = booleanPreferencesKey("pdf_follow_dark_theme")

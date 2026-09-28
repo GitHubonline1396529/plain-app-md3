@@ -1,0 +1,51 @@
+name: Build Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compile + Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+
+      - run: chmod +x ./gradlew
+
+      # Same verification command as the upstream codeql workflow: compile the
+      # app plus the shared Android target, which exercises the dynamic-color
+      # platform bridge (DynamicColor.android.kt).
+      - name: Compile
+        run: ./gradlew :app:compileGithubDebugKotlin :shared:compileAndroidMain --no-daemon
+
+      # The debug build type uses the custom "debugPinned" signing config, which
+      # only wires a keystore when ~/.android/debug.keystore exists. CI runners
+      # do not ship one, so create it before assembling.
+      - name: Generate debug keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android \
+            -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Assemble F-Droid debug APK
+        run: ./gradlew :app:assembleFdroidDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plainapp-fdroid-debug
+          path: app/build/outputs/apk/fdroid/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

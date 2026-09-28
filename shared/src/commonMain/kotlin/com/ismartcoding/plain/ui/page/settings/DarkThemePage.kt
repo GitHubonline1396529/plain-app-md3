@@ -18,6 +18,7 @@ import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.ismartcoding.plain.enums.DarkTheme
+import com.ismartcoding.plain.platform.isDynamicColorAvailable
 import com.ismartcoding.plain.preferences.AmoledDarkThemePreference
 import com.ismartcoding.plain.preferences.DarkThemePreference
 import com.ismartcoding.plain.preferences.LocalAmoledDarkTheme
@@ -39,6 +40,8 @@ import kotlinx.coroutines.launch
 fun DarkThemePage(navController: NavHostController) {
     val darkTheme = LocalDarkTheme.current
     val amoledDarkTheme = LocalAmoledDarkTheme.current
+    val dynamicColor = LocalDynamicColor.current
+    val dynamicColorAvailable = isDynamicColorAvailable()
     val pdfFollowDarkTheme = LocalPdfFollowDarkTheme.current
     val scope = rememberCoroutineScope()
 
@@ -70,6 +73,29 @@ fun DarkThemePage(navController: NavHostController) {
                                         DarkThemePreference.putAsync(it.value)
                                     }
                                 })
+                            }
+                        }
+                    }
+                }
+                if (dynamicColorAvailable) {
+                    item {
+                        VerticalSpace(dp = 16.dp)
+                        PCard(modifier = Modifier.padding(horizontal = PlainTheme.PAGE_HORIZONTAL_MARGIN)) {
+                            PListItem(
+                                modifier = Modifier.clickable {
+                                    scope.launch {
+                                        DynamicColorPreference.putAsync(!dynamicColor)
+                                    }
+                                },
+                                title = stringResource(Res.string.dynamic_color),
+                                subtitle = stringResource(Res.string.dynamic_color_desc),
+                            ) {
+                                PSwitch(activated = dynamicColor) {
+                                    scope.launch {
+                                        DynamicColorPreference.putAsync(!dynamicColor)
+                                    }
+                                }
+                                HorizontalSpace(8.dp)
                             }
                         }
                     }
