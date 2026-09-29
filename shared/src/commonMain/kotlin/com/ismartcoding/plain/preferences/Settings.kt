@@ -2,11 +2,12 @@ package com.ismartcoding.plain.preferences
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import com.ismartcoding.plain.data.DUpdateInfo
 import com.ismartcoding.plain.platform.Locale
-import com.ismartcoding.plain.ui.extensions.collectAsStateValue
 import kotlinx.coroutines.flow.map
 
 data class Settings(
@@ -21,7 +22,7 @@ data class Settings(
 val LocalLocale = compositionLocalOf<Locale?> { null }
 
 @Composable
-fun SettingsProvider(content: @Composable () -> Unit) {
+fun SettingsProvider(onLoaded: () -> Unit = {}, content: @Composable () -> Unit) {
     val defaultSettings = Settings(
         darkTheme = DarkThemePreference.default,
         amoledDarkTheme = AmoledDarkThemePreference.default,
@@ -30,7 +31,10 @@ fun SettingsProvider(content: @Composable () -> Unit) {
         locale = null,
         updateInfo = DUpdateInfo(),
     )
-    val settings = remember {
+    // Null initial distinguishes "store not read yet" from "read and equals the
+    // default": callers (e.g. MainActivity) keep the splash on screen until the
+    // real theme preference is known, so the first visible frame is correct.
+    val settingsState = remember {
         appDataStore.dataFlow.map {
             Settings(
                 darkTheme = DarkThemePreference.get(it),
@@ -41,7 +45,10 @@ fun SettingsProvider(content: @Composable () -> Unit) {
                 updateInfo = UpdateInfoPreference.getValue(it),
             )
         }
-    }.collectAsStateValue(initial = defaultSettings)
+    }.collectAsState(initial = null as Settings?)
+    val settings = settingsState.value ?: defaultSettings
+    val loaded = settingsState.value != null
+    LaunchedEffect(loaded) { if (loaded) onLoaded() }
 
     CompositionLocalProvider(
         LocalDarkTheme provides settings.darkTheme,

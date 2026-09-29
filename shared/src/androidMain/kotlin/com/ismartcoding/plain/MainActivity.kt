@@ -79,6 +79,7 @@ class MainActivity : AppCompatActivity() {
     internal var pendingFileUris by mutableStateOf<Set<Uri>?>(null)
     internal var pendingForwardText by mutableStateOf<String?>(null)
     internal var pendingCrashReport by mutableStateOf<String?>(null)
+    private val settingsLoaded = mutableStateOf(false)
 
     internal val screenCapture = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null && ScreenMirrorService.instance == null) {
@@ -143,7 +144,11 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("ClickableViewAccessibility", "DiscouragedPrivateApi")
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen(); super.onCreate(savedInstanceState)
+        val splashScreen = installSplashScreen()
+        // Keep the (dynamic-colored) splash until the stored theme preferences
+        // are read, so the first visible Compose frame is not the brand fallback.
+        splashScreen.setKeepOnScreenCondition { !settingsLoaded.value }
+        super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false); enableEdgeToEdge()
         lifecycleScope.launch(Dispatchers.Default) { Language.initLocaleAsync() }
         WindowCompat.getInsetsController(window, window.decorView).systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -174,7 +179,7 @@ class MainActivity : AppCompatActivity() {
             registerReceiver(plugInReceiver, powerFilter); registerReceiver(networkStateReceiver, IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION))
         }
         setContent {
-            SettingsProvider {
+            SettingsProvider(onLoaded = { settingsLoaded.value = true }) {
                 AppTheme(useDarkTheme = DarkTheme.isDarkTheme(LocalDarkTheme.current)) {
                     Main(
                         navControllerState, onLaunched = { handleIntent(intent) },
