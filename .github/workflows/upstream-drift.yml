@@ -1,0 +1,151 @@
+name: Upstream Drift
+
+# Watches how far this fork has fallen behind plainhub/plain-app and opens a
+# single rolling issue so drift is noticed without anyone having to remember to
+# go look. The issue is reused (not re-created) while it stays open, so this
+# never becomes notification spam.
+
+on:
+  schedule:
+    # Mondays 04:17 UTC. Deliberately off the hour: scheduled workflows are
+    # queued behind peak load and tend to start late.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Compare main against upstream/main
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/plainhub/plain-app.git 2>/dev/null || true
+          git fetch --prune --tags upstream '+refs/heads/*:refs/remotes/upstream/*'
+
+      # This fork is based on the newest upstream *tag*, not on upstream/main.
+      # See UPSTREAM.md. Tracking main would report ~180 commits of drift that
+      # are deliberately not taken, which is noise, not signal.
+      - name: Resolve newest upstream release tag
+        id: uptag
+        run: |
+          set -euo pipefail
+          # Exact semver only: excludes this fork's own v*-md3.N tags and
+          # upstream's plain-common-v*/plain-ui-v* library tags.
+          tag=$(git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          if [ -z "$tag" ]; then
+            echo "::error::No upstream release tag found (did the tag fetch succeed?)"
+            exit 1
+          fi
+          echo "Newest upstream release tag: $tag"
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "sha=$(git rev-parse "$tag^{commit}")" >> $GITHUB_OUTPUT
+
+      - name: Measure drift
+        id: drift
+        env:
+          UP_TAG: ${{ steps.uptag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          behind=$(git rev-list --count main.."$UP_TAG")
+          ahead=$(git rev-list --count "$UP_TAG"..main)
+
+          # Newest 40 upstream commits, pre-rendered as markdown list items so
+          # no shell quoting is needed later.
+          {
+            git log --no-merges --pretty=format:'- %h %s' -40 main.."$UP_TAG"
+          } | sed 's/^/> /' > commits.md
+
+          {
+            echo "behind=$behind"
+            echo "ahead=$ahead"
+            echo "base=$(git merge-base main "$UP_TAG")"
+          } >> $GITHUB_OUTPUT
+
+          echo "tag=$UP_TAG behind=$behind ahead=$ahead"
+
+      - name: Build the report
+        env:
+          BEHIND: ${{ steps.drift.outputs.behind }}
+          AHEAD: ${{ steps.drift.outputs.ahead }}
+          BASE: ${{ steps.drift.outputs.base }}
+          UP_TAG: ${{ steps.uptag.outputs.tag }}
+          UP_SHA: ${{ steps.uptag.outputs.sha }}
+        run: |
+          set -euo pipefail
+          {
+            echo '<!-- upstream-drift-report -->'
+            echo "_Last checked: $(date -u '+%Y-%m-%d %H:%M UTC') by \`upstream-drift.yml\`._"
+            echo
+            echo '| | |'
+            echo '|---|---|'
+            echo "| Newest upstream release | [\`$UP_TAG\`](https://github.com/plainhub/plain-app/releases/tag/$UP_TAG) |"
+            echo "| Commits behind it | **$BEHIND** |"
+            echo "| Fork-only commits ahead | **$AHEAD** |"
+            echo "| Base commit | [\`${BASE:0:9}\`](https://github.com/plainhub/plain-app/commit/$UP_SHA) |"
+            echo
+            echo 'This fork tracks upstream'"'"'s newest **release tag**, not `main` — see'
+            echo '[UPSTREAM.md](../blob/main/UPSTREAM.md). Upstream commits after that tag are'
+            echo 'intentionally not taken until a new tag appears.'
+            echo
+            echo '## Moving the base forward'
+            echo
+            echo '```bash'
+            echo 'git fetch upstream --prune --tags'
+            echo 'git tag --list | grep -E ''^v[0-9]+\.[0-9]+\.[0-9]+$'' | sort -V | tail -1'
+            echo './scripts/sync-upstream.ps1 -Base <that-tag>'
+            echo '```'
+            echo
+            echo '## Newest upstream commits since our base'
+            echo
+            cat commits.md
+          } > report.md
+          echo "report.md written ($(wc -l < report.md) lines)"
+
+      - name: Open or update the drift issue
+        if: ${{ steps.drift.outputs.behind != '0' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BEHIND: ${{ steps.drift.outputs.behind }}
+          UP_TAG: ${{ steps.uptag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          title="Upstream tagged $UP_TAG: fork is $BEHIND commit(s) behind"
+          marker='<!-- upstream-drift-report -->'
+
+          existing=$(gh issue list --state open --search "$marker in:body" \
+            --json number --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$title" --body-file report.md
+            echo "Updated issue #$existing"
+          else
+            gh issue create --title "$title" --body-file report.md
+            echo "Created a new drift issue"
+          fi
+
+      - name: Close the drift issue when caught up
+        if: ${{ steps.drift.outputs.behind == '0' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          marker='<!-- upstream-drift-report -->'
+          existing=$(gh issue list --state open --search "$marker in:body" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment 'Fork is up to date with upstream. Closing.'
+            echo "Closed issue #$existing"
+          else
+            echo "Already in sync; no open drift issue."
+          fi

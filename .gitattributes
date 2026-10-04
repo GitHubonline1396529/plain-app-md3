@@ -1,0 +1,22 @@
+# Merge driver for this fork.
+#
+# Rationale: upstream rewrites README.md constantly (~68 of its last 400
+# commits) and this fork replaces it wholesale. Without a driver, every
+# `git merge upstream/main` lands in a README conflict that has to be resolved
+# by hand. This makes git keep the fork's copy and silently drop upstream's
+# changes to that one file — which is the intent, since the fork's README
+# already points at the upstream README as the source of truth.
+#
+# `merge=ours` is NOT a built-in driver: naming it here does nothing on its
+# own. The driver has to be declared, which lives in .git/config and therefore
+# cannot be committed. Run either of:
+#
+#     git config merge.ours.driver true
+#     ./scripts/sync-upstream.ps1        # does it for you, idempotently
+#
+# Without the config line this file is inert and README.md conflicts as usual.
+#
+# To see what upstream changed in it:  git log upstream/main -- README.md
+# To take upstream's version instead:  git checkout upstream/main -- README.md
+
+README.md	merge=ours
