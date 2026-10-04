@@ -167,6 +167,7 @@ upstream verbatim. Keep it that way — every extra file is a future conflict.
 | `shared/src/commonMain/.../preferences/Preferences.kt` | new pref |
 | `shared/src/commonMain/.../preferences/LocalPreferences.kt` | new pref storage |
 | `shared/src/commonMain/.../preferences/Settings.kt` | pref plumbing |
+| `shared/src/commonMain/.../Constants.kt` | `LATEST_RELEASE_URL` points at this fork's releases |
 | `shared/src/commonMain/composeResources/values/strings_settings.xml` | toggle label |
 | `app/src/main/res/values-v31/colors.xml` | dynamic colour resource overlay |
 | `app/src/main/res/values-v31/themes.xml` | dynamic theme overlay |
@@ -265,7 +266,7 @@ versionName = "4.0.0"    // 38
 ```
 
 `versionCode` is derived: `vCode - singleAbiNum`. At the `v3.3.25` base
-(`vCode = 700`) that is **699 for arm64-v8a** and **698 for armeabi-v7a**. Bump
+(`vCode = 701`) that is **700 for arm64-v8a** and **699 for armeabi-v7a**. Bump
 `vCode` and `versionName` together, and always bump `vCode` — without it users
 cannot upgrade in place.
 
@@ -371,6 +372,22 @@ VirusTotal body edit) and `id-token: write` (SLSA provenance OIDC).
   uninstall it first; an in-place upgrade fails with
   `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. This is intentional — keeping the id
   identical means zero build-script divergence from upstream.
+- **That mismatch is a one-way door per user.** Once someone installs a fork
+  build they can no longer install any upstream build, because the package id
+  matches and the signature does not. They must uninstall the fork first.
+- **The in-app update check points at this fork's releases** (`Constants.kt`).
+  Upstream's URL would offer an APK that cannot install over a fork build — a
+  ~60 MB download followed by a failed install.
+- **The `-md3.N` suffix defeats upstream's version parser.** `Version` reads
+  only three numeric components and coerces the rest to 0, so
+  `3.3.25-md3.2` compares as `3.3.0`. The effect is narrow and accepted: the
+  updater sees the current release and newer `-md3.N` releases as equal, so it
+  never nags. Nothing else misreports — `Settings` shows the raw value
+  (`getAppVersion()` returns `versionName (versionCode)` verbatim, e.g.
+  `3.3.25-md3.2 (701)`), and the installer enforces identity by `applicationId`
+  plus `versionCode`, not by this parser. The one place the parsed value would
+  surface is the banner's "available version" text, which never appears for
+  exactly the reason above.
 - **APK filenames are not renamed.** `release.yml` hardcodes
   `PlainApp-<version>-64bit-Recommended.apk` in six places and `build-apk.sh` in
   two. Fork identity is carried by `versionName`, not the filename.
